@@ -49,6 +49,17 @@ bool sentrycrashcm_isReservedThread(thread_t thread);
  */
 bool sentrycrashcm_hasReservedThreads(void);
 
+#if !SDK_V10 && defined(SENTRY_TEST) && SENTRY_HAS_MACH
+#    include <mach/mig_errors.h>
+#    include <stddef.h>
+bool sentrycrashcm_test_isValidMachException(const void *message, size_t capacity);
+bool sentrycrashcm_test_isHostExceptionTask(task_t task);
+void sentrycrashcm_test_makeMachReply(
+    const mach_msg_header_t *request, kern_return_t returnCode, mig_reply_error_t *reply);
+bool sentrycrashcm_test_sendErrorRetainsReply(mach_msg_return_t result);
+mach_msg_return_t sentrycrashcm_test_replyToMachException(void *message, kern_return_t returnCode);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
