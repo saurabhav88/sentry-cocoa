@@ -40,8 +40,12 @@
 #    if SENTRY_HAS_MACH
 
 #        include <mach/mach.h>
+#        include <mach/mig_errors.h>
 #        include <pthread.h>
 #        include <signal.h>
+#        include <stddef.h>
+#        include <stdint.h>
+#        include <unistd.h>
 
 // ============================================================================
 #        pragma mark - Constants -
@@ -289,6 +293,122 @@ sentrycrashcm_hasReservedThreads(void)
 #        pragma mark - Handler -
 // ============================================================================
 
+/* mach_exc.defs: mach_exception_raise is request 2405 with two port descriptors
+ * and at most two 64-bit codes. Validate before consulting task/thread rights or
+ * changing host fatal state. The receive buffer also has room for the trailer.
+ */
+static bool
+isValidExceptionMessage(const MachExceptionMessage *message, size_t capacity)
+{
+    const size_t fixedSize = offsetof(MachExceptionMessage, code);
+    if (capacity < fixedSize || message->header.msgh_size < fixedSize
+        || message->header.msgh_size > capacity || message->header.msgh_id != 2405
+        || !(message->header.msgh_bits & MACH_MSGH_BITS_COMPLEX)
+        || message->body.msgh_descriptor_count != 2
+        || message->thread.type != MACH_MSG_PORT_DESCRIPTOR
+        || message->task.type != MACH_MSG_PORT_DESCRIPTOR
+        || message->thread.disposition != MACH_MSG_TYPE_PORT_SEND
+        || message->task.disposition != MACH_MSG_TYPE_PORT_SEND
+        || !MACH_PORT_VALID(message->thread.name) || !MACH_PORT_VALID(message->task.name)
+        || MACH_MSGH_BITS_REMOTE(message->header.msgh_bits) != MACH_MSG_TYPE_PORT_SEND_ONCE
+        || !MACH_PORT_VALID(message->header.msgh_remote_port)
+        || message->NDR.int_rep != NDR_record.int_rep || message->codeCount > 2) {
+        return false;
+    }
+    return message->header.msgh_size == fixedSize + message->codeCount * sizeof(message->code[0]);
+}
+
+static bool
+isHostExceptionTask(task_t task)
+{
+    int taskPID = 0;
+    // A name alone does not prove task identity across task-port flavours.
+    // Unknown/invalid rights must never be promoted to a host fatal report.
+    return MACH_PORT_VALID(task) && pid_for_task(task, &taskPID) == KERN_SUCCESS
+        && taskPID == getpid();
+}
+
+static void
+makeExceptionReply(
+    const mach_msg_header_t *request, kern_return_t returnCode, MachReplyMessage *reply)
+{
+    memset(reply, 0, sizeof(*reply));
+    reply->header.msgh_bits = MACH_MSGH_BITS(MACH_MSGH_BITS_REMOTE(request->msgh_bits), 0);
+    reply->header.msgh_size = sizeof(*reply);
+    reply->header.msgh_remote_port = request->msgh_remote_port;
+    // Unsigned arithmetic also bounds malformed IDs without signed overflow.
+    reply->header.msgh_id = (mach_msg_id_t)((uint32_t)request->msgh_id + 100U);
+    reply->NDR = NDR_record;
+    reply->returnCode = returnCode;
+}
+
+static bool
+sendErrorRetainsReply(mach_msg_return_t result)
+{
+    // libsyscall/mach/mach_msg.c uses this exact recoverable error class.
+    // Other errors may have partially consumed rights; do not destroy them twice.
+    return result == MACH_SEND_INVALID_DEST || result == MACH_SEND_TIMED_OUT
+        || result == MACH_SEND_INTERRUPTED;
+}
+
+static mach_msg_return_t
+replyToException(MachExceptionMessage *message, kern_return_t returnCode)
+{
+    MachReplyMessage reply;
+    makeExceptionReply(&message->header, returnCode, &reply);
+    // Move the reply right into the reply object, then release the received
+    // thread/task descriptors and voucher. The destination receive right is not
+    // owned by the received header (mach_msg_destroy intentionally ignores it).
+    message->header.msgh_remote_port = MACH_PORT_NULL;
+    mach_msg_destroy(&message->header);
+
+    if (!MACH_PORT_VALID(reply.header.msgh_remote_port)) {
+        return MACH_SEND_INVALID_DEST;
+    }
+    mach_msg_return_t result = mach_msg(&reply.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT,
+        sizeof(reply), 0, MACH_PORT_NULL, 0, MACH_PORT_NULL);
+    if (sendErrorRetainsReply(result)) {
+        mach_msg_destroy(&reply.header);
+    } else if (result != MACH_MSG_SUCCESS) {
+        SENTRY_ASYNC_SAFE_LOG_ERROR("Could not reply to exception: 0x%x", result);
+    }
+    return result;
+}
+
+#        if defined(SENTRY_TEST)
+bool
+sentrycrashcm_test_isValidMachException(const void *message, size_t capacity)
+{
+    return isValidExceptionMessage(message, capacity);
+}
+
+bool
+sentrycrashcm_test_isHostExceptionTask(task_t task)
+{
+    return isHostExceptionTask(task);
+}
+
+void
+sentrycrashcm_test_makeMachReply(
+    const mach_msg_header_t *request, kern_return_t returnCode, mig_reply_error_t *reply)
+{
+    _Static_assert(sizeof(MachReplyMessage) == sizeof(mig_reply_error_t), "MIG reply layout");
+    makeExceptionReply(request, returnCode, (MachReplyMessage *)reply);
+}
+
+bool
+sentrycrashcm_test_sendErrorRetainsReply(mach_msg_return_t result)
+{
+    return sendErrorRetainsReply(result);
+}
+
+mach_msg_return_t
+sentrycrashcm_test_replyToMachException(void *message, kern_return_t returnCode)
+{
+    return replyToException(message, returnCode);
+}
+#        endif
+
 /** Our exception handler thread routine.
  * Wait for an exception message, uninstall our exception port, record the
  * exception information, and write a report.
@@ -297,7 +417,6 @@ static void *
 handleExceptions(void *const userData)
 {
     MachExceptionMessage exceptionMessage = { { 0 } };
-    MachReplyMessage replyMessage = { { 0 } };
     char *eventID = g_primaryEventID;
 
     const char *threadName = (const char *)userData;
@@ -311,10 +430,22 @@ handleExceptions(void *const userData)
     for (;;) {
         SENTRY_ASYNC_SAFE_LOG_DEBUG("Waiting for mach exception");
 
+        // Do not reuse absent code bytes from a previously rejected message.
+        memset(&exceptionMessage, 0, sizeof(exceptionMessage));
         // Wait for a message.
         kern_return_t kr = mach_msg(&exceptionMessage.header, MACH_RCV_MSG, 0,
             sizeof(exceptionMessage), g_exceptionPort, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
         if (kr == KERN_SUCCESS) {
+            if (!isValidExceptionMessage(&exceptionMessage, sizeof(exceptionMessage))) {
+                replyToException(&exceptionMessage, MIG_BAD_ARGUMENTS);
+                continue;
+            }
+            if (!isHostExceptionTask(exceptionMessage.task.name)) {
+                // A spawned child may inherit this port. Its failure must not
+                // suspend the host, consume its handler, or mark its session crashed.
+                replyToException(&exceptionMessage, KERN_FAILURE);
+                continue;
+            }
             break;
         }
 
@@ -322,8 +453,14 @@ handleExceptions(void *const userData)
         SENTRY_ASYNC_SAFE_LOG_ERROR("mach_msg: %s", mach_error_string(kr));
     }
 
-    SENTRY_ASYNC_SAFE_LOG_DEBUG("Trapped mach exception code 0x%llx, subcode 0x%llx",
-        exceptionMessage.code[0], exceptionMessage.code[1]);
+    // A receive trailer follows the variable-length code array. Never interpret
+    // trailer bytes as an absent code/subcode when a valid request has fewer codes.
+    const mach_exception_data_type_t exceptionCode
+        = exceptionMessage.codeCount > 0 ? exceptionMessage.code[0] : 0;
+    const mach_exception_data_type_t exceptionSubcode
+        = exceptionMessage.codeCount > 1 ? exceptionMessage.code[1] : 0;
+    SENTRY_ASYNC_SAFE_LOG_DEBUG(
+        "Trapped mach exception code 0x%llx, subcode 0x%llx", exceptionCode, exceptionSubcode);
     if (g_isEnabled) {
         thread_act_array_t threads = NULL;
         mach_msg_type_number_t numThreads = 0;
@@ -378,8 +515,8 @@ handleExceptions(void *const userData)
         crashContext->eventID = eventID;
         crashContext->registersAreValid = true;
         crashContext->mach.type = exceptionMessage.exception;
-        crashContext->mach.code = exceptionMessage.code[0] & (int64_t)MACH_ERROR_CODE_MASK;
-        crashContext->mach.subcode = exceptionMessage.code[1] & (int64_t)MACH_ERROR_CODE_MASK;
+        crashContext->mach.code = exceptionCode & (int64_t)MACH_ERROR_CODE_MASK;
+        crashContext->mach.subcode = exceptionSubcode & (int64_t)MACH_ERROR_CODE_MASK;
         if (crashContext->mach.code == KERN_PROTECTION_FAILURE && crashContext->isStackOverflow) {
             // A stack overflow should return KERN_INVALID_ADDRESS, but
             // when a stack blasts through the guard pages at the top of the
@@ -398,13 +535,8 @@ handleExceptions(void *const userData)
     }
 
     SENTRY_ASYNC_SAFE_LOG_DEBUG("Replying to mach exception message.");
-    // Send a reply saying "I didn't handle this exception".
-    replyMessage.header = exceptionMessage.header;
-    replyMessage.NDR = exceptionMessage.NDR;
-    replyMessage.returnCode = KERN_FAILURE;
-
-    mach_msg(&replyMessage.header, MACH_SEND_MSG, sizeof(replyMessage), 0, MACH_PORT_NULL,
-        MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
+    // Send a protocol-correct failure reply so normal kernel handling continues.
+    replyToException(&exceptionMessage, KERN_FAILURE);
 
     return NULL;
 }
