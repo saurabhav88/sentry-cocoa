@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=./ci-utils.sh
 source "$SCRIPT_DIR/ci-utils.sh"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 SOURCE_REVISION=""
 OUTPUT_DIR=""
 DERIVED_DATA=""
@@ -69,6 +69,10 @@ LOCK_SHA="$(shasum -a 256 "$PACKAGE_LOCK" | awk '{print $1}')"
 [[ "$(git -C "$PACKAGE_CLONES/checkouts/KSCrash" rev-parse HEAD)" == 18a633dec20c265f03386294f9d82d208bb13094 ]] || fail "KSCrash checkout revision differs from the lock"
 [[ -z "$(git -C "$PACKAGE_CLONES/checkouts/KSCrash" status --porcelain --untracked-files=no)" ]] || fail "KSCrash checkout has tracked changes"
 PROJECT_LOCK="$REPO_ROOT/Sentry.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+[[ ! -L "$PROJECT_LOCK" ]] \
+    || fail "Generated project lock must not be a symlink"
+[[ "$(canonical_path "$PROJECT_LOCK")" == "$PROJECT_LOCK" ]] \
+    || fail "Generated project lock path must not traverse symlinks"
 git check-ignore -q "$PROJECT_LOCK" || fail "Generated project lock must be ignored"
 if [[ -e "$PROJECT_LOCK" ]]; then
     cmp -s "$PACKAGE_LOCK" "$PROJECT_LOCK" || fail "Existing project lock differs; refusing overwrite"
