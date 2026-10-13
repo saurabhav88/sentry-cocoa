@@ -1,0 +1,40 @@
+name: EnviousWispr SDK validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+# Manual validation queues rather than cancelling evidence.
+# No deployment occurs; this workflow does not replace app branch protection.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  ios-checks:
+    name: Validate SDK on iOS
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select installed Xcode
+        uses: ./.github/actions/setup-xcode
+        with:
+          version: "26"
+      - name: Resolve simulator destination
+        id: destination
+        uses: ./.github/actions/resolve-test-destination
+        with:
+          platform: iOS
+      - name: Install build formatter
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcbeautify
+      - name: Build patched native SDK
+        env:
+          IOS_SIMULATOR_OS: ${{ steps.destination.outputs.TEST_OS }}
+          IOS_DEVICE_NAME: ${{ steps.destination.outputs.TEST_DEVICE }}
+        run: make build-ios FOR_AGENTS=true
+      - name: Test patched native SDK
+        env:
+          IOS_SIMULATOR_OS: ${{ steps.destination.outputs.TEST_OS }}
+          IOS_DEVICE_NAME: ${{ steps.destination.outputs.TEST_DEVICE }}
+        run: make test-ios FOR_AGENTS=true

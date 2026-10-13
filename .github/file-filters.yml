@@ -22,6 +22,7 @@ high_risk_code: &high_risk_code
 
 run_unit_tests_for_prs: &run_unit_tests_for_prs
   - ".github/workflows/run-full-ci-workflow.yml"
+  - ".github/workflows/enviouswispr-validation.yml"
   - "Sources/Configuration/**"
   - "Sources/include/**"
   - "Sources/Resources/**"
