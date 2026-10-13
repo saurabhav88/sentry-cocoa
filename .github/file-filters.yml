@@ -20,6 +20,7 @@ high_risk_code: &high_risk_code
   - ".github/file-filters.yml"
 
 run_unit_tests_for_prs: &run_unit_tests_for_prs
+  - ".github/workflows/enviouswispr-validation.yml"
   - "Sources/Configuration/**"
   - "Sources/include/**"
   - "Sources/Resources/**"

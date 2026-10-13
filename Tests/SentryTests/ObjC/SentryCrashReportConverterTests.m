@@ -400,16 +400,21 @@
     [self isValidReport:@"Resources/incomplete"];
 }
 
-- (void)testDuplicateFrame
+- (void)testLinkRegisterFrameWithoutMatchingCallerIsPreserved
 {
-    // There are 23 frames in the report but it should remove the duplicate
+    // LR matches the second captured frame, but the next caller has a different
+    // address. This is not independent evidence of a duplicated cursor frame.
     [self isValidReport:@"Resources/dup-frame"];
     NSDictionary *rawCrash = [self getCrashReport:@"Resources/dup-frame"];
     SentryCrashReportConverter *reportConverter =
         [[SentryCrashReportConverter alloc] initWithReport:rawCrash inAppLogic:self.inAppLogic];
     SentryEvent *event = [reportConverter convertReportToEvent];
     SentryException *exception = event.exceptions.firstObject;
-    XCTAssertEqual(exception.stacktrace.frames.count, (unsigned long)22);
+    XCTAssertEqual(exception.stacktrace.frames.count, (unsigned long)23);
+    XCTAssertEqualObjects(
+        exception.stacktrace.frames[21].instructionAddress, @"0x0000000035099c5d");
+    XCTAssertEqualObjects(
+        exception.stacktrace.frames[20].instructionAddress, @"0x00000000315821bf");
     XCTAssertEqualObjects(exception.value,
         @"-[__NSArrayI objectForKey:]: unrecognized selector sent to instance "
         @"0x1e59bc50");

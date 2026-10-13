@@ -25,14 +25,22 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (void)fixDuplicateFrames
 {
-    if (self.frames.count < 2 || nil == self.registers) {
+    if (self.frames.count < 3 || nil == self.registers) {
         return;
     }
 
     SentryFrame *beforeLastFrame = [self.frames objectAtIndex:self.frames.count - 2];
+    SentryFrame *capturedCaller = [self.frames objectAtIndex:self.frames.count - 3];
+    NSString *linkRegister = self.registers[@"lr"];
+    NSString *candidateAddress = beforeLastFrame.instructionAddress;
+    NSString *callerAddress = capturedCaller.instructionAddress;
 
-    if ([self.registers[@"lr"]
-            isEqualToString:SENTRY_UNWRAP_NULLABLE(NSString, beforeLastFrame.instructionAddress)]) {
+    // The cursor emits PC, LR, then captured frame-pointer callers (reversed here).
+    // LR alone is not deletion evidence: preserve short/incomplete stacks unless
+    // that first captured caller independently repeats the synthetic LR entry.
+    if (linkRegister != nil && candidateAddress != nil && callerAddress != nil &&
+        [linkRegister isEqualToString:candidateAddress] &&
+        [candidateAddress isEqualToString:callerAddress]) {
         NSMutableArray *copyFrames = self.frames.mutableCopy;
         [copyFrames removeObjectAtIndex:self.frames.count - 2];
         self.frames = copyFrames;
