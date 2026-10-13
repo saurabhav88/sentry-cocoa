@@ -17,5 +17,12 @@
     "27.2"
   ],
   "sdk_version": "9.30.1",
-  "publication": "not yet published; URL is intended release destination"
+  "publication": "published; fresh release download checksum verified",
+  "artifact_release_revision": "14dac32ed1793ee49659153b2d40849ba28deb26",
+  "ios_source_validation": {
+    "revision": "74b3fb132b7c5e907799f383fb121c9e85de076c",
+    "run_url": "https://github.com/saurabhav88/sentry-cocoa/actions/runs/38452359865",
+    "conclusion": "success",
+    "scope": "native source build and default iOS tests; selected binary remains macOS-only"
+  }
 }
