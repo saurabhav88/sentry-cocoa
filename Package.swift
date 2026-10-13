@@ -98,8 +98,8 @@ if !enableV10 {
     targets += [
         .binaryTarget(
             name: "Sentry",
-            url: "https://github.com/getsentry/sentry-cocoa/releases/download/9.30.1/Sentry.xcframework.zip",
-            checksum: "bf6bc2308b9f1d11cc0d5ad5a324dbe300afa37c8391809ecb6dd3758fa728e2" //Sentry-Static
+            url: "https://github.com/saurabhav88/sentry-cocoa/releases/download/9.30.1-enviouswispr.1/Sentry-enviouswispr-9.30.1-r1.xcframework.zip",
+            checksum: "1d2e6c6f723b17cfb2bc7ab801044b3705e85ccb650992da1390efe1d7c79ee4" //Sentry-Static
         ),
         .binaryTarget(
             name: "Sentry-Dynamic",
