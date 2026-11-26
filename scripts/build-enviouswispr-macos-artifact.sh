@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-# shellcheck source=./ci-utils.sh
+# shellcheck source=./ci-utils.sh disable=SC1091
 source "$SCRIPT_DIR/ci-utils.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 SOURCE_REVISION=""
@@ -10,7 +10,7 @@ OUTPUT_DIR=""
 DERIVED_DATA=""
 PACKAGE_CLONES=""
 PACKAGE_LOCK=""
-ARTIFACT_ID="enviouswispr-9.30.1-r1"
+ARTIFACT_ID="enviouswispr-9.35.0-r1"
 
 usage() {
     log_info "Usage: $0 [named parameters]"
@@ -63,10 +63,10 @@ cd "$REPO_ROOT"
 SOURCE_COMMIT="$(git rev-parse --verify --end-of-options "$SOURCE_REVISION^{commit}")"
 [[ "$SOURCE_COMMIT" == "$(git rev-parse HEAD)" ]] || fail "Checkout HEAD does not match the explicit source revision"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "Source checkout must be clean"
-git merge-base --is-ancestor 4b67ceb57b0e452c473ca900f6a24f3c021f1e24 "$SOURCE_COMMIT" || fail "Reviewed receiver and caller fixes are absent"
+git merge-base --is-ancestor 017413b932d8983e10b54c738e4011ed0358e4bc "$SOURCE_COMMIT" || fail "Reviewed receiver and caller fixes are absent"
 LOCK_SHA="$(shasum -a 256 "$PACKAGE_LOCK" | awk '{print $1}')"
-[[ "$LOCK_SHA" == f14bc3972aee38fdb27a9e86d37b31319b06a15bfb8eafe59241dcfa7815539b ]] || fail "Dependency lock differs from the qualified stock pin"
-[[ "$(git -C "$PACKAGE_CLONES/checkouts/KSCrash" rev-parse HEAD)" == 18a633dec20c265f03386294f9d82d208bb13094 ]] || fail "KSCrash checkout revision differs from the lock"
+[[ "$LOCK_SHA" == 35fb36c9960d079a0256806389e29bbdabf0041213f63d4f3fe3c8e5c0847fbb ]] || fail "Dependency lock differs from the qualified stock pin"
+[[ "$(git -C "$PACKAGE_CLONES/checkouts/KSCrash" rev-parse HEAD)" == e41302af9fbcf4d9cc6cc95933cb989a90941d37 ]] || fail "KSCrash checkout revision differs from the lock"
 [[ -z "$(git -C "$PACKAGE_CLONES/checkouts/KSCrash" status --porcelain --untracked-files=no)" ]] || fail "KSCrash checkout has tracked changes"
 PROJECT_LOCK="$REPO_ROOT/Sentry.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
 [[ ! -L "$PROJECT_LOCK" ]] \
@@ -83,7 +83,7 @@ fi
 mkdir "$OUTPUT_DIR" "$DERIVED_DATA"
 cp "$PACKAGE_LOCK" "$OUTPUT_DIR/Package.resolved"
 git rev-parse HEAD 'HEAD^{tree}' > "$OUTPUT_DIR/source-revision.txt"
-git diff --stat 4f135c52afeeb1d6937eb93824c7ec1cddcaa372 HEAD > "$OUTPUT_DIR/source-delta.txt"
+git diff --stat 485e0622e00d60d71eb6b519822188e2eb7c29e3 HEAD > "$OUTPUT_DIR/source-delta.txt"
 xcodebuild -version > "$OUTPUT_DIR/toolchain.txt"
 xcrun swift --version >> "$OUTPUT_DIR/toolchain.txt"
 ARCHIVE="$OUTPUT_DIR/archive/Sentry/macosx.xcarchive"
@@ -98,6 +98,7 @@ python3 -c 'import json,sys; json.dump(sys.argv[1:],sys.stdout,indent=2)' xcodeb
 xcodebuild "${BUILD_ARGS[@]}" -showBuildSettings -json > "$OUTPUT_DIR/effective-settings.json" 2> "$OUTPUT_DIR/settings.log"
 log_info "Building reviewed Sentry source $SOURCE_COMMIT"
 xcodebuild archive "${BUILD_ARGS[@]}" -archivePath "$ARCHIVE" > "$OUTPUT_DIR/archive.log" 2>&1
+# Match upstream scripts/build-xcframework-slice.sh static-framework workaround (getsentry/sentry-cocoa#3769).
 plutil -replace MinimumOSVersion -string 100.0 "$ARCHIVE/Products/Library/Frameworks/Sentry.framework/Resources/Info.plist"
 bash "$SCRIPT_DIR/assemble-xcframework.sh" --scheme Sentry --sdks macosx --archive-template "$OUTPUT_DIR/archive/Sentry/SDK_NAME.xcarchive" --output "$OUTPUT_DIR/Sentry.xcframework" > "$OUTPUT_DIR/assembly.log" 2>&1
 FRAMEWORK="$OUTPUT_DIR/Sentry.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework/Sentry"
@@ -109,6 +110,6 @@ unzip -l "$ZIP_PATH" > "$OUTPUT_DIR/archive-entries.txt"
 xcrun swift package compute-checksum "$ZIP_PATH" > "$OUTPUT_DIR/swiftpm-checksum.txt"
 shasum -a 256 "$FRAMEWORK" "$ZIP_PATH" "$SCRIPT_DIR/build-enviouswispr-macos-artifact.sh" "$SCRIPT_DIR/assemble-xcframework.sh" "$SCRIPT_DIR/ci-utils.sh" "$REPO_ROOT/Sources/SentryCppHelper/SentryCppHelper.swift" > "$OUTPUT_DIR/payload-hashes.txt"
 python3 -c 'import json,sys; json.dump(dict(zip(["compiled_source_revision","upstream_base","reviewed_receiver_commit","reviewed_caller_commit","artifact_id","dependency_lock_sha256","artifact_path","publication","qualification"],sys.argv[1:])),sys.stdout,indent=2)' \
-    "$SOURCE_COMMIT" 4f135c52afeeb1d6937eb93824c7ec1cddcaa372 6282aa518d32d4f8fac913602b7c87ba613762de 4b67ceb57b0e452c473ca900f6a24f3c021f1e24 "$ARTIFACT_ID" "$LOCK_SHA" "$ZIP_PATH" unpublished "Local packaging only; controls and consumer symbols require separate receipts" > "$OUTPUT_DIR/provenance.json"
+    "$SOURCE_COMMIT" 485e0622e00d60d71eb6b519822188e2eb7c29e3 b6df676927f1d153753577f57de5f810593cfe8b 017413b932d8983e10b54c738e4011ed0358e4bc "$ARTIFACT_ID" "$LOCK_SHA" "$ZIP_PATH" unpublished "Local packaging only; controls and consumer symbols require separate receipts" > "$OUTPUT_DIR/provenance.json"
 log_info "Unpublished artifact: $ZIP_PATH"
 log_info "SwiftPM checksum: $(cat "$OUTPUT_DIR/swiftpm-checksum.txt")"
