@@ -1,21 +1,45 @@
 {
   "purpose": "EnviousWispr macOS-only selected Sentry binary; unused products retain upstream artifacts",
-  "upstream_revision": "4f135c52afeeb1d6937eb93824c7ec1cddcaa372",
-  "compiled_source_revision": "760b30fe26d6fcf8ec5c5e6caf1743c4a4b28d0e",
-  "artifact_id": "enviouswispr-9.30.1-r1",
-  "artifact_url": "https://github.com/saurabhav88/sentry-cocoa/releases/download/9.30.1-enviouswispr.1/Sentry-enviouswispr-9.30.1-r1.xcframework.zip",
-  "archive_sha256": "1d2e6c6f723b17cfb2bc7ab801044b3705e85ccb650992da1390efe1d7c79ee4",
-  "framework_sha256": "919f7fb83e0b100d39ca981a993c0b138cf2a83fa38cfa5590b19c4c26487146",
+  "sdk_version": "9.35.0",
+  "upstream_revision": "485e0622e00d60d71eb6b519822188e2eb7c29e3",
+  "compiled_source_revision": "c776dde89305955e2991b0d2791602d099aa7cf7",
+  "compiled_source_tree": "12d29679e9f03eccbc278ef156c83eb660b9e416",
+  "reviewed_receiver_commit": "b6df676927f1d153753577f57de5f810593cfe8b",
+  "reviewed_caller_commit": "017413b932d8983e10b54c738e4011ed0358e4bc",
+  "dependency_lock_sha256": "35fb36c9960d079a0256806389e29bbdabf0041213f63d4f3fe3c8e5c0847fbb",
+  "kscrash_revision": "e41302af9fbcf4d9cc6cc95933cb989a90941d37",
+  "toolchain": {
+    "xcode": "27.2",
+    "xcode_build": "27B52",
+    "swift": "6.4.2"
+  },
+  "artifact_id": "enviouswispr-9.35.0-r1",
+  "release_tag": "9.35.0-enviouswispr.1",
+  "artifact_url": "https://github.com/saurabhav88/sentry-cocoa/releases/download/9.35.0-enviouswispr.1/Sentry-enviouswispr-9.35.0-r1.xcframework.zip",
+  "archive_sha256": "1371deb1f3956890f3838de6927a2daadc41bf6ad0369bef714f69ae92c94b8c",
+  "framework_sha256": "acad748fcc12d393951a35b66c9b4f35ae58ddaa36a66c767f81161569dff9b2",
   "architectures": [
     "arm64",
     "arm64e",
     "x86_64"
   ],
   "mach_o_minimum_macos": "12.0",
-  "qualified_application_macos": [
-    "14.8.9",
-    "27.2"
-  ],
-  "sdk_version": "9.30.1",
-  "publication": "not yet published; URL is intended release destination"
+  "metrickit_receiver": "SentryMetricManager (Swift 6.4+ on macOS 27+) with SentryMXManager fallback (macOS <27)",
+  "macos_unit_validation": {
+    "macos": "27.3",
+    "xcode": "27.2",
+    "tests_executed": 152,
+    "failures": 0,
+    "suites": [
+      "SentryCrashMonitor_MachException_Tests (14)",
+      "SentryStacktraceTests (16)",
+      "SentryCrashReportConverterTests (74)",
+      "SentryMetricManagerTests (14)",
+      "SentryMetricKitIntegrationTests (19)",
+      "SentryMetricKitIntegrationInitTests (9)",
+      "SentryMetricKitEventTests (6)"
+    ]
+  },
+  "qualified_application_macos": [],
+  "publication": "release tag 9.35.0-enviouswispr.1 targets this commit; public download checksum and resolved tag SHA recorded in publication receipt"
 }
